@@ -177,22 +177,40 @@ function useLiveSpot(enabled) {
     setStatus("connecting");
 
     const fetchSpot = async () => {
+      let price = null;
+
+      // 1) Deribit index price (no-www avoids some CORS configs)
       try {
-        const r = await fetch("https://www.deribit.com/api/v2/public/get_index_price?index_name=btc_usd");
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        const j = await r.json();
-        const price = j?.result?.index_price;
-        if (!price) throw new Error("No index_price in response");
+        const r = await fetch("https://deribit.com/api/v2/public/get_index_price?index_name=btc_usd");
+        if (r.ok) {
+          const j = await r.json();
+          price = j?.result?.index_price || null;
+        }
+      } catch (_) {}
+
+      // 2) Coinbase REST fallback
+      if (!price) {
+        try {
+          const r = await fetch("https://api.coinbase.com/v2/prices/BTC-USD/spot");
+          if (r.ok) {
+            const j = await r.json();
+            const amt = parseFloat(j?.data?.amount);
+            if (amt > 0) price = amt;
+          }
+        } catch (_) {}
+      }
+
+      if (price) {
         setSpot(price);
         setStatus("connected");
-      } catch (e) {
-        console.error("Deribit spot fetch failed:", e);
+      } else {
+        console.error("All spot price sources failed");
         setStatus("error");
       }
     };
 
     fetchSpot();
-    const id = setInterval(fetchSpot, 10_000);
+    const id = setInterval(fetchSpot, 10000);
     return () => clearInterval(id);
   }, [enabled]);
 
