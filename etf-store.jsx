@@ -125,14 +125,7 @@ function useEtfStore() {
 // Returns array of { date: "YYYY-MM-DD", ibit, others } in millions.
 async function fetchFarsideFlows() {
   const target = 'https://farside.co.uk/btc/';
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20000);
-  let res;
-  try {
-    res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`, { signal: ctrl.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await fetch(`/proxy?url=${encodeURIComponent(target)}`);
   if (!res.ok) throw new Error(`Proxy returned ${res.status}`);
   const html = await res.text();
 
