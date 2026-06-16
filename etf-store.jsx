@@ -124,29 +124,43 @@ function useEtfStore() {
 // Fetch + parse the Farside ETF flow table via a CORS proxy.
 // Returns array of { date: "YYYY-MM-DD", ibit, others } in millions.
 async function fetchFarsideFlows() {
-  const target = 'https://farside.co.uk/bitcoin-etf-flow-all-data-table/';
-  const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`);
+  const target = 'https://farside.co.uk/btc/';
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  let res;
+  try {
+    res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(target)}`, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) throw new Error(`Proxy returned ${res.status}`);
   const html = await res.text();
 
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  const table = doc.querySelector('table');
+  // The page has multiple tables; target the one with class "etf"
+  const table = doc.querySelector('table.etf') || doc.querySelector('table');
   if (!table) throw new Error('No table found — Farside page structure may have changed');
 
   const rows = Array.from(table.querySelectorAll('tr'));
-  const headerCells = Array.from(rows[0]?.querySelectorAll('th,td') ?? [])
-    .map(c => c.textContent.trim().toUpperCase());
 
-  const ibitIdx  = headerCells.findIndex(h => h === 'IBIT');
-  const totalIdx = headerCells.findIndex(h => h === 'TOTAL');
-  if (ibitIdx  < 0) throw new Error('IBIT column not found');
-  if (totalIdx < 0) throw new Error('Total column not found');
+  // Header spans 3 rows (logo row, ticker row, fee row). Find the row with "IBIT".
+  let ibitIdx = -1, dataStartRow = 1;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const cells = Array.from(rows[i].querySelectorAll('th,td'));
+    const idx = cells.findIndex(c => c.textContent.trim().toUpperCase() === 'IBIT');
+    if (idx >= 0) { ibitIdx = idx; dataStartRow = i + 1; break; }
+  }
+  if (ibitIdx < 0) throw new Error('IBIT column not found');
+  // Total is always the last column; its header cell is empty in the ticker row
+  const totalIdx = Array.from(rows[0].querySelectorAll('th,td')).length - 1;
 
+  // Negatives use accounting parentheses: (177.9) → -177.9
   const parseFlow = (s) => {
     const clean = s.replace(/,/g, '').trim();
     if (!clean || clean === '-' || clean === '—') return 0;
-    const n = parseFloat(clean);
-    return isFinite(n) ? n : 0;
+    const neg = clean.startsWith('(') && clean.endsWith(')');
+    const n = parseFloat(clean.replace(/[()]/g, ''));
+    return isFinite(n) ? (neg ? -n : n) : 0;
   };
 
   const MONTHS = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
@@ -165,7 +179,7 @@ async function fetchFarsideFlows() {
   };
 
   const entries = [];
-  for (const row of rows.slice(1)) {
+  for (const row of rows.slice(dataStartRow)) {
     const cells = Array.from(row.querySelectorAll('td'));
     if (cells.length <= Math.max(ibitIdx, totalIdx)) continue;
     const isoDate = parseDate(cells[0].textContent);
