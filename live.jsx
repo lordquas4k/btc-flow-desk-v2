@@ -1,5 +1,5 @@
 /* ============================================================
-   LIVE DATA — Coinbase spot WS + Deribit options REST
+   LIVE DATA — Deribit spot REST + Deribit options REST
    ============================================================ */
 
 const { useState: useStateL, useEffect: useEffectL, useRef: useRefL } = React;
@@ -160,54 +160,40 @@ function computeMetrics(books, spot) {
 }
 
 // ------------------------------------------------------------
-// Coinbase WS hook — real-time spot
+// Deribit REST hook — BTC index price, polled every 10 s
 // ------------------------------------------------------------
 function useLiveSpot(enabled) {
   const [spot, setSpot] = useStateL(null);
   const [change, setChange] = useStateL(0);
   const [status, setStatus] = useStateL("off"); // off | connecting | connected | error
-  const wsRef = useRefL(null);
 
   useEffectL(() => {
     if (!enabled) {
-      if (wsRef.current) { try { wsRef.current.close(); } catch (e) {} wsRef.current = null; }
       setStatus("off");
       setSpot(null);
+      setChange(0);
       return;
     }
     setStatus("connecting");
-    let ws;
-    try {
-      ws = new WebSocket("wss://ws-feed.exchange.coinbase.com");
-    } catch (e) {
-      setStatus("error");
-      return;
-    }
-    wsRef.current = ws;
-    ws.onopen = () => {
-      ws.send(JSON.stringify({
-        type: "subscribe",
-        channels: [{ name: "ticker", product_ids: ["BTC-USD"] }]
-      }));
-      setStatus("connected");
-    };
-    ws.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (d.type === "ticker" && d.price) {
-          const price = parseFloat(d.price);
-          setSpot(price);
-          if (d.open_24h) {
-            const open = parseFloat(d.open_24h);
-            if (open > 0) setChange(((price - open) / open) * 100);
-          }
-        }
-      } catch (_) {}
-    };
-    ws.onerror = () => setStatus("error");
-    ws.onclose = () => { if (wsRef.current === ws) setStatus("off"); };
 
-    return () => { try { ws.close(); } catch (e) {} wsRef.current = null; };
+    const fetchSpot = async () => {
+      try {
+        const r = await fetch("https://www.deribit.com/api/v2/public/get_index_price?index_name=btc_usd");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        const j = await r.json();
+        const price = j?.result?.index_price;
+        if (!price) throw new Error("No index_price in response");
+        setSpot(price);
+        setStatus("connected");
+      } catch (e) {
+        console.error("Deribit spot fetch failed:", e);
+        setStatus("error");
+      }
+    };
+
+    fetchSpot();
+    const id = setInterval(fetchSpot, 10_000);
+    return () => clearInterval(id);
   }, [enabled]);
 
   return { spot, change, status };
