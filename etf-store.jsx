@@ -99,8 +99,11 @@ function computeAggregates(history) {
   const posSum = last30.filter(v => v > 0).reduce((a, b) => a + b, 0);
   const negSum = Math.abs(last30.filter(v => v < 0).reduce((a, b) => a + b, 0));
   const buySellRatio = negSum > 0 ? (posSum / negSum).toFixed(2) : "∞";
-  const streak5 = history.slice(-5).map(s => s.ibit > 0 ? "up" : s.ibit < 0 ? "down" : "flat");
-  return { avg30, avg14, buyDominance, buySellRatio, streak5, lastEtf: history[history.length - 1] };
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const confirmed = history.filter(s => localKey(s.date) < todayStr);
+  const lastEtf = confirmed[confirmed.length - 1] || history[history.length - 1];
+  const streak5 = confirmed.slice(-5).map(s => s.ibit > 0 ? "up" : s.ibit < 0 ? "down" : "flat");
+  return { avg30, avg14, buyDominance, buySellRatio, streak5, lastEtf };
 }
 
 // React hook — subscribe to store changes
