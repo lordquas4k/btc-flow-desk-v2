@@ -177,6 +177,7 @@ async function fetchFarsideFlows() {
     if (cells.length <= Math.max(ibitIdx, totalIdx)) continue;
     const isoDate = parseDate(cells[0].textContent);
     if (!isoDate) continue;
+    if (isoDate >= new Date().toISOString().slice(0, 10)) continue; // skip today — data not yet confirmed
     const ibit  = parseFlow(cells[ibitIdx].textContent);
     const total = parseFlow(cells[totalIdx].textContent);
     entries.push({ date: isoDate, ibit, others: parseFloat((total - ibit).toFixed(1)) });
