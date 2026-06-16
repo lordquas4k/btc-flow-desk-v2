@@ -299,18 +299,70 @@ function StatCard({ label, value, sub, info, accent, glow, valueClass, term, cur
 }
 
 // -- Levels Table (vertical, the centerpiece)
-function LevelsTable({ levels, regime = "negative-gamma" }) {
-  const dotsRow = (n, color) => {
-    const arr = [1, 2, 3, 4, 5];
-    return arr.map(i => (
-      <span key={i} className={"d" + (i <= n ? " on-" + color : "")}></span>
-    ));
-  };
+// candidates: flat array of { price, strength, note, pin? } — GF excluded, passed separately
+// spot: live spot price; classification is dynamic relative to spot at render time
+function LevelsTable({ candidates = [], spot, regime = "negative-gamma" }) {
+  const WHIPSAW  = 0.008; // 0.8% — just-crossed band stays as S with ⚠
+  const MIN_STR  = 3;     // minimum dots to qualify for a named label
+
+  // Levels within 0.8% above spot → borderline crossed support, keep as S with ⚠
+  const whipsawPool = candidates
+    .filter(l => l.price > spot && (l.price - spot) / spot <= WHIPSAW && l.strength >= MIN_STR)
+    .map(l => ({ ...l, whipsaw: true }))
+    .sort((a, b) => b.price - a.price);
+
+  // True resistances: >0.8% above spot, significant
+  const resPool = candidates
+    .filter(l => l.price > spot * (1 + WHIPSAW) && l.strength >= MIN_STR)
+    .sort((a, b) => a.price - b.price) // ascending: closest = R1
+    .slice(0, 3);
+
+  // True supports: at or below spot, significant; whipsaw levels prepended (closest to spot first)
+  const supPool = [
+    ...whipsawPool,
+    ...candidates
+      .filter(l => l.price <= spot && l.strength >= MIN_STR)
+      .sort((a, b) => b.price - a.price), // descending: closest = S1
+  ].slice(0, 3);
+
+  const rSlots = [0, 1, 2].map(i => resPool[i] || null);
+  const sSlots = [0, 1, 2].map(i => supPool[i] || null);
+
+  const dotsRow = (n, color) => [1, 2, 3, 4, 5].map(i => (
+    <span key={i} className={"d" + (i <= n ? " on-" + color : "")}></span>
+  ));
+
   const lbl = (term, content, customDef) => (
     <HoverDef term={term} custom={customDef ? { tag: DEFINITIONS[term]?.tag, def: customDef } : null}>
       <span>{content}</span>
     </HoverDef>
   );
+
+  const makeRow = (slot, rank, type) => {
+    const label = type + rank;
+    const color = type === "R" ? "red" : "mint";
+    const empty = !slot;
+    return (
+      <div key={label} className={"row " + type.toLowerCase() + (slot?.whipsaw ? " whipsaw" : "")}>
+        <div className="cell lbl">
+          {lbl(label, slot?.whipsaw
+            ? <>{label} <span style={{color: "var(--amber)", fontSize: 11}}>⚠</span></>
+            : label
+          )}
+        </div>
+        <div className="cell price" style={empty ? {color: "var(--fg-3)"} : undefined}>
+          {empty ? "—" : DATA.fmt$(slot.price)}
+        </div>
+        <div className="cell">
+          {!empty && <div className="strength">{dotsRow(slot.strength, color)}</div>}
+        </div>
+        <div className="cell note" style={empty ? {color: "var(--fg-3)"} : undefined}>
+          {empty ? "" : slot.note + (slot.whipsaw ? " · Just Crossed" : "") + (slot.pin ? " ★" : "")}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div>
       <div className="panel-head" style={{marginBottom: 12}}>
@@ -323,24 +375,20 @@ function LevelsTable({ levels, regime = "negative-gamma" }) {
         </span>
       </div>
       <div className="levels">
-
-        <div className="row r"><div className="cell lbl">{lbl("R3", "R3")}</div><div className="cell price">{DATA.fmt$(levels.r3.price)}</div><div className="cell"><div className="strength">{dotsRow(levels.r3.strength, "red")}</div></div><div className="cell note">{levels.r3.note}</div></div>
-
-        <div className="row r"><div className="cell lbl">{lbl("R2", "R2")}</div><div className="cell price">{DATA.fmt$(levels.r2.price)}</div><div className="cell"><div className="strength">{dotsRow(levels.r2.strength, "red")}</div></div><div className="cell note">{levels.r2.note}</div></div>
-
-        <div className="row r"><div className="cell lbl">{lbl("R1", "R1")}</div><div className="cell price">{DATA.fmt$(levels.r1.price)}</div><div className="cell"><div className="strength">{dotsRow(levels.r1.strength, "red")}</div></div><div className="cell note">{levels.r1.note}</div></div>
-
-        <div className="row gf"><div className="cell lbl">{lbl("GF", "GF", levels.gf.tooltip)}</div><div className="cell price">{DATA.fmt$(levels.gf.price)}</div><div className="cell"><div className="strength">{dotsRow(levels.gf.strength, "amber")}</div></div><div className="cell note">{levels.gf.note}</div></div>
-
-        <div className="row divider"><div className="cell"></div><div className="cell"></div><div className="cell"></div><div className="cell" style={{textAlign:"right"}}>↓ NEGATIVE GAMMA ZONE</div></div>
-
-        <div className="row spot"><div className="cell lbl">{lbl("Spot", "Spot")}</div><div className="cell price">{DATA.fmt$(levels.spot)}</div><div className="cell"></div><div className="cell note">Current Price</div></div>
-
-        <div className="row s"><div className="cell lbl">{lbl("S1", <>S1 {levels.s1.pin && <span className="pinmark">★</span>}</>)}</div><div className="cell price">{DATA.fmt$(levels.s1.price)}</div><div className="cell"><div className="strength">{dotsRow(levels.s1.strength, "mint")}</div></div><div className="cell note">{levels.s1.note}</div></div>
-
-        <div className="row s"><div className="cell lbl">{lbl("S2", "S2")}</div><div className="cell price">{DATA.fmt$(levels.s2.price)}</div><div className="cell"><div className="strength">{dotsRow(levels.s2.strength, "mint")}</div></div><div className="cell note">{levels.s2.note}</div></div>
-
-        <div className="row s"><div className="cell lbl">{lbl("S3", "S3")}</div><div className="cell price">{DATA.fmt$(levels.s3.price)}</div><div className="cell"><div className="strength">{dotsRow(levels.s3.strength, "mint")}</div></div><div className="cell note">{levels.s3.note}</div></div>
+        {rSlots.map((slot, i) => makeRow(slot, i + 1, "R"))}
+        <div className="row divider">
+          <div className="cell"></div><div className="cell"></div><div className="cell"></div>
+          <div className="cell" style={{textAlign: "right"}}>
+            {regime === "negative-gamma" ? "↓ NEGATIVE GAMMA ZONE" : "↑ POSITIVE GAMMA ZONE"}
+          </div>
+        </div>
+        <div className="row spot">
+          <div className="cell lbl">{lbl("Spot", "Spot")}</div>
+          <div className="cell price">{DATA.fmt$(spot)}</div>
+          <div className="cell"></div>
+          <div className="cell note">Current Price</div>
+        </div>
+        {sSlots.map((slot, i) => makeRow(slot, i + 1, "S"))}
       </div>
     </div>
   );

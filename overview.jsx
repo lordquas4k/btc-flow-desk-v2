@@ -392,10 +392,43 @@ function OverviewTab() {
         </Panel>
       </div>
 
-      {/* LEVELS */}
-      <Panel>
-        <LevelsTable levels={DATA.levels} regime={isPositiveGex ? "positive-gamma" : "negative-gamma"} />
-      </Panel>
+      {/* LEVELS + GAMMA FLIP */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: "var(--gap-grid)", alignItems: "start" }}>
+        <Panel>
+          <LevelsTable
+            candidates={[
+              DATA.levels.r1, DATA.levels.r2, DATA.levels.r3,
+              DATA.levels.s1, DATA.levels.s2, DATA.levels.s3,
+            ].filter(Boolean)}
+            spot={DATA.levels.spot}
+            regime={isPositiveGex ? "positive-gamma" : "negative-gamma"}
+          />
+        </Panel>
+        <Panel>
+          <div className="panel-head" style={{marginBottom: 12}}>
+            <span className="panel-title">
+              <span className="dotchip" style={{background: "var(--amber)"}}></span>
+              Gamma Flip
+            </span>
+            <HoverDef term="GF"><span className="info" style={{cursor: "help"}}>i</span></HoverDef>
+          </div>
+          <div style={{display: "flex", flexDirection: "column", gap: 12}}>
+            <div className="v glow-amber" style={{fontSize: 26, fontFamily: "JetBrains Mono, monospace", fontWeight: 700}}>
+              {gfPrice}
+            </div>
+            <span className={"badge " + (isAboveFlip ? "b-mint" : "b-red")} style={{alignSelf: "flex-start", fontSize: 11, padding: "4px 10px"}}>
+              <span className="dot"></span>
+              {isAboveFlip ? "Above GF — Positive Gamma" : "Below GF — Negative Gamma"}
+            </span>
+            <div className="mono muted" style={{fontSize: 11, lineHeight: 1.6}}>
+              Spot is <strong>${spotVsFlip.toLocaleString("en-US")}</strong> {isAboveFlip ? "above" : "below"} the flip.<br/>
+              {isAboveFlip
+                ? "Dealers long gamma · hedging dampens moves · pinning regime."
+                : "Dealers short gamma · hedging amplifies moves · momentum regime."}
+            </div>
+          </div>
+        </Panel>
+      </div>
 
       {/* STREAKS */}
       <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
