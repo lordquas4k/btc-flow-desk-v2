@@ -4,6 +4,7 @@
 
 function ETFFlowsTab() {
   const { Panel, StatCard, Streak, SparkBars, AreaChart, SignalBadge, HoverDef } = window.UI;
+  const { FeDemandPanel, BtcPriceChart } = window.FlowsEngine;
   const store = window.ETFStore.useEtfStore();
 
   // Default date = the day AFTER the latest entry (mock or user) — "next day to log"
@@ -93,8 +94,15 @@ function ETFFlowsTab() {
   const ibitSeries = history.map(s => ({ label: DATA.fmtDate(s.date), value: s.ibit }));
   const totalSeries = history.map(s => ({ label: DATA.fmtDate(s.date), value: s.total }));
 
+  const etfSeries = DATA.etfHistory.map(s => s.ibit);
+  const etfDates  = DATA.etfHistory.map(s => s.date);
+
   return (
     <div className="grid" style={{ gridTemplateColumns: "1fr", gap: "var(--gap-grid)" }}>
+
+      {/* PRICE + FLOWS ALIGNED */}
+      <BtcPriceChart />
+      <FeDemandPanel series={etfSeries} dates={etfDates} label="Spot ETF" compact={true} />
 
       {/* DAILY ENTRY */}
       <Panel title="Daily Entry" dot="mint"

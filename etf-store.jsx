@@ -92,9 +92,11 @@ function computeAggregates(history) {
   const ibitFlows = history.map(s => s.ibit);
   const last30 = ibitFlows.slice(-30);
   const last14 = ibitFlows.slice(-14);
+  const last7  = ibitFlows.slice(-7);
   const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
   const avg30 = avg(last30);
   const avg14 = avg(last14);
+  const avg7  = avg(last7);
   const buyDominance = Math.round((last30.filter(v => v > 0).length / Math.max(1, last30.length)) * 100);
   const posSum = last30.filter(v => v > 0).reduce((a, b) => a + b, 0);
   const negSum = Math.abs(last30.filter(v => v < 0).reduce((a, b) => a + b, 0));
@@ -103,7 +105,7 @@ function computeAggregates(history) {
   const confirmed = history.filter(s => localKey(s.date) < todayStr);
   const lastEtf = confirmed[confirmed.length - 1] || history[history.length - 1];
   const streak5 = confirmed.slice(-5).map(s => s.ibit > 0 ? "up" : s.ibit < 0 ? "down" : "flat");
-  return { avg30, avg14, buyDominance, buySellRatio, streak5, lastEtf };
+  return { avg30, avg14, avg7, buyDominance, buySellRatio, streak5, lastEtf };
 }
 
 // React hook — subscribe to store changes

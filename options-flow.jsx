@@ -3,10 +3,9 @@
    ============================================================ */
 
 function OptionsFlowTab() {
-  const { Panel, StatCard, LevelsTable, OIChart, AreaChart, HoverDef } = window.UI;
+  const { Panel, StatCard, LevelsTable, OIChart, HoverDef } = window.UI;
+  const { FeDemandPanel, BtcPriceChart } = window.FlowsEngine;
   const [expirySet, setExpirySet] = useState("Weekly");
-  const [weeklyFile, setWeeklyFile] = useState(null);
-  const [monthlyFile, setMonthlyFile] = useState(null);
 
   // Active bucket — driven by the segmented control
   const bucket = DATA.currentByExpiry[expirySet.toLowerCase()] || DATA.currentByExpiry.weekly;
@@ -23,15 +22,12 @@ function OptionsFlowTab() {
   const callPct = bucket.callIV;
   const skewBar = (putPct / (putPct + callPct)) * 100;
 
-  // GEX/PCR sparkline data from history
-  const gexHistory = DATA.optHistory.map((o) => ({
-    label: DATA.fmtDate(o.date),
-    value: Math.round(o.gex * 1000) / 10
-  }));
-  const pcrHistory = DATA.optHistory.map((o) => ({
-    label: DATA.fmtDate(o.date),
-    value: parseFloat((o.pcr - 1).toFixed(2)) * 100
-  }));
+  // PCR demand series: (1 − PCR) × 100 → positive = call-heavy (bullish), negative = put-heavy (bearish)
+  // Cells show the actual PCR value; axis shows the signed score (+/−)
+  const pcrSeries   = DATA.optHistory.map(o => (1 - o.pcr) * 100);
+  const pcrDates    = DATA.optHistory.map(o => o.date);
+  const pcrCellFmt  = v => (1 - v / 100).toFixed(2);                      // cells: e.g. "0.85"
+  const pcrAxisFmt  = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(0); // axis:  e.g. "+35"
 
   // Per-bucket tone for KPI tooltips
   const gexTone = bucket.gex > 0.1 ? "neu" : bucket.gex < -0.1 ? "warn" : "neu";
@@ -39,24 +35,6 @@ function OptionsFlowTab() {
 
   return (
     <div className="grid" style={{ gridTemplateColumns: "1fr", gap: "var(--gap-grid)" }}>
-
-      {/* UPLOAD ROW */}
-      <Panel title="Upload Options Chain" dot="mint"
-        action={
-          <div className="flex items-center gap-3">
-            <span className="mono muted" style={{fontSize: 11}}>Spot</span>
-            <span className="mono glow-white" style={{fontSize: 14, fontWeight: 600}}>${spot.toLocaleString("en-US")}</span>
-          </div>
-        }>
-        <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          <FileDrop label="Weekly Expiry CSV" file={weeklyFile} onFile={setWeeklyFile} hint="15 May 26 · ATM ±20%" />
-          <FileDrop label="Monthly Expiry CSV" file={monthlyFile} onFile={setMonthlyFile} hint="30 May 26 · ATM ±25%" />
-        </div>
-        <div className="mt-3 flex items-center justify-between">
-          <span className="mono muted" style={{fontSize: 11}}>Required for GEX, walls and gamma flip calculations</span>
-          <button className="btn primary">RUN ANALYSIS</button>
-        </div>
-      </Panel>
 
       {/* EXPIRY SEGMENT */}
       <div className="flex items-center justify-between">
@@ -117,7 +95,14 @@ function OptionsFlowTab() {
 
       {/* LEVELS + OI ROW */}
       <div className="grid" style={{ gridTemplateColumns: "1.1fr 1fr" }}>
-        <Panel><LevelsTable levels={bucket.levels} regime={regime} /></Panel>
+        <Panel>
+          <LevelsTable
+            resistance={[bucket.levels?.r1, bucket.levels?.r2, bucket.levels?.r3]}
+            support={[bucket.levels?.s1, bucket.levels?.s2, bucket.levels?.s3]}
+            spot={spot}
+            regime={regime}
+          />
+        </Panel>
         <Panel title="Open Interest by Strike" dot="blue"
           action={
             <div className="flex items-center gap-3">
@@ -137,63 +122,13 @@ function OptionsFlowTab() {
         </Panel>
       </div>
 
-      {/* TIME SERIES ROW */}
-      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-        <Panel title="GEX History (last 30 sessions)" dot="mint">
-          <AreaChart data={gexHistory} kind="gex" height={200} />
-        </Panel>
-        <Panel title="PC Ratio History (last 30 sessions)" dot="violet">
-          <AreaChart data={pcrHistory} kind="pcr" height={200} />
-        </Panel>
-      </div>
-
-      {/* HISTORY TABLE */}
-      <Panel title="Expiry History">
-        <table className="dt">
-          <thead>
-            <tr>
-              <th>Date</th><th>Expiry</th><th>Type</th><th className="r">GEX</th><th className="r">Gamma Flip</th>
-              <th className="r">Put Wall</th><th className="r">Call Wall</th><th className="r">PC Ratio</th><th>Bias</th>
-            </tr>
-          </thead>
-          <tbody>
-            {DATA.optHistory.slice().reverse().slice(0, 12).map((o, i) => (
-              <tr key={i}>
-                <td className="muted">{DATA.fmtDate(o.date)}, 2026</td>
-                <td className="dim">{o.expiry}</td>
-                <td><span className="badge b-muted">{o.type}</span></td>
-                <td className={"r " + (o.gex >= 0 ? "pos" : "neg")}>{o.gex >= 0 ? "+" : ""}{o.gex.toFixed(3)}B</td>
-                <td className="r dim">{DATA.fmt$(o.gammaFlip)}</td>
-                <td className="r pos">{DATA.fmt$(o.putWall)}</td>
-                <td className="r neg">{DATA.fmt$(o.callWall)}</td>
-                <td className={"r " + (o.pcr > 1.5 ? "neg" : o.pcr < 0.7 ? "pos" : "dim")}>{o.pcr.toFixed(2)}</td>
-                <td><span className={"badge " + (o.bias === "Bullish" ? "b-mint" : o.bias === "Bearish" ? "b-red" : "b-muted")}>
-                  <span className="dot"></span>{o.bias}
-                </span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Panel>
+      {/* PRICE + FLOWS ALIGNED */}
+      <BtcPriceChart />
+      <FeDemandPanel series={pcrSeries} dates={pcrDates} label="Options Demand (PCR)" fmtVal={pcrCellFmt} fmtAxis={pcrAxisFmt} mode="pcr" compact={true} />
     </div>
   );
 }
 
-function FileDrop({ label, file, onFile, hint }) {
-  const inputRef = useRef(null);
-  return (
-    <div className="field">
-      <label>{label}</label>
-      <div className={"drop" + (file ? " has-file" : "")} onClick={() => inputRef.current && inputRef.current.click()}>
-        <input ref={inputRef} type="file" accept=".csv" style={{display: "none"}}
-          onChange={e => e.target.files[0] && onFile(e.target.files[0].name)} />
-        <div className="icon">{file ? "✓" : "↑"}</div>
-        <div className="title">{file ? file : `Drop CSV or click to browse`}</div>
-        <div className="sub">{file ? "Ready · click to replace" : hint}</div>
-      </div>
-    </div>
-  );
-}
 
 function Mini({ label, v, cls, term }) {
   const { HoverDef } = window.UI;

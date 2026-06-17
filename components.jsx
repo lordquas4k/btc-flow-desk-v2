@@ -299,35 +299,31 @@ function StatCard({ label, value, sub, info, accent, glow, valueClass, term, cur
 }
 
 // -- Levels Table (vertical, the centerpiece)
-// candidates: flat array of { price, strength, note, pin? } — GF excluded, passed separately
-// spot: live spot price; classification is dynamic relative to spot at render time
-function LevelsTable({ candidates = [], spot, regime = "negative-gamma" }) {
-  const WHIPSAW  = 0.008; // 0.8% — just-crossed band stays as S with ⚠
-  const MIN_STR  = 3;     // minimum dots to qualify for a named label
+// resistance/support: semantically fixed arrays — R stays R, S stays S regardless of spot
+// spot: used for whipsaw detection (support level crossed above spot) and the spot row
+function LevelsTable({ resistance = [], support = [], spot, regime = "negative-gamma" }) {
+  const WHIPSAW = 0.008;
 
-  // Levels within 0.8% above spot → borderline crossed support, keep as S with ⚠
-  const whipsawPool = candidates
-    .filter(l => l.price > spot && (l.price - spot) / spot <= WHIPSAW && l.strength >= MIN_STR)
-    .map(l => ({ ...l, whipsaw: true }))
-    .sort((a, b) => b.price - a.price);
+  // Strength → opacity: all levels shown, dimmer = weaker
+  const strOpacity = (s) => ({ 1: 0.28, 2: 0.48, 3: 0.68, 4: 0.85, 5: 1.0 })[s] ?? 0.5;
 
-  // True resistances: >0.8% above spot, significant
-  const resPool = candidates
-    .filter(l => l.price > spot * (1 + WHIPSAW) && l.strength >= MIN_STR)
-    .sort((a, b) => a.price - b.price) // ascending: closest = R1
+  // Resistance: above spot (closest = R1). Drop any that have drifted below spot.
+  const rSlots = [...resistance.filter(Boolean)]
+    .filter(l => l.price > spot * (1 - 0.001))
+    .sort((a, b) => a.price - b.price)
     .slice(0, 3);
 
-  // True supports: at or below spot, significant; whipsaw levels prepended (closest to spot first)
-  const supPool = [
-    ...whipsawPool,
-    ...candidates
-      .filter(l => l.price <= spot && l.strength >= MIN_STR)
-      .sort((a, b) => b.price - a.price), // descending: closest = S1
-  ].slice(0, 3);
+  // Support: at/below spot, plus whipsaw band (0–0.8% above). Drop stale levels far above spot.
+  const sSlots = [...support.filter(Boolean)]
+    .filter(l => l.price <= spot * (1 + WHIPSAW))
+    .sort((a, b) => b.price - a.price)
+    .slice(0, 3)
+    .map(l => (l.price > spot) ? { ...l, whipsaw: true } : l);
 
-  const rSlots = [0, 1, 2].map(i => resPool[i] || null);
-  const sSlots = [0, 1, 2].map(i => supPool[i] || null);
+  while (rSlots.length < 3) rSlots.push(null);
+  while (sSlots.length < 3) sSlots.push(null);
 
+  // Always render 5 dots to keep all rows the same height — unlit dots for empty/unfilled slots
   const dotsRow = (n, color) => [1, 2, 3, 4, 5].map(i => (
     <span key={i} className={"d" + (i <= n ? " on-" + color : "")}></span>
   ));
@@ -342,6 +338,7 @@ function LevelsTable({ candidates = [], spot, regime = "negative-gamma" }) {
     const label = type + rank;
     const color = type === "R" ? "red" : "mint";
     const empty = !slot;
+    const opacity = empty ? 0.18 : strOpacity(slot.strength);
     return (
       <div key={label} className={"row " + type.toLowerCase() + (slot?.whipsaw ? " whipsaw" : "")}>
         <div className="cell lbl">
@@ -350,13 +347,14 @@ function LevelsTable({ candidates = [], spot, regime = "negative-gamma" }) {
             : label
           )}
         </div>
-        <div className="cell price" style={empty ? {color: "var(--fg-3)"} : undefined}>
+        <div className="cell price" style={{opacity}}>
           {empty ? "—" : DATA.fmt$(slot.price)}
         </div>
-        <div className="cell">
-          {!empty && <div className="strength">{dotsRow(slot.strength, color)}</div>}
+        <div className="cell" style={{opacity}}>
+          {/* always render dots to keep row height consistent */}
+          <div className="strength">{dotsRow(empty ? 0 : slot.strength, color)}</div>
         </div>
-        <div className="cell note" style={empty ? {color: "var(--fg-3)"} : undefined}>
+        <div className="cell note" style={{opacity}}>
           {empty ? "" : slot.note + (slot.whipsaw ? " · Just Crossed" : "") + (slot.pin ? " ★" : "")}
         </div>
       </div>
@@ -375,7 +373,7 @@ function LevelsTable({ candidates = [], spot, regime = "negative-gamma" }) {
         </span>
       </div>
       <div className="levels">
-        {rSlots.map((slot, i) => makeRow(slot, i + 1, "R"))}
+        {[...rSlots].reverse().map((slot, i) => makeRow(slot, rSlots.length - i, "R"))}
         <div className="row divider">
           <div className="cell"></div><div className="cell"></div><div className="cell"></div>
           <div className="cell" style={{textAlign: "right"}}>
@@ -543,80 +541,101 @@ function AreaChart({ data, height = 180, showAxis = true, kind = "tot" }) {
 // -- Open Interest by Strike (calls vs puts side-by-side bars)
 function OIChart({ data, spot, maxPain, height = 230 }) {
   const w = 1000; const h = height;
-  const pad = { top: 22, right: 16, bottom: 30, left: 36 };
+  // pad.top reserves space for the top-right info box (sits at y=4..40, bars start at 44)
+  const pad = { top: 44, right: 16, bottom: 32, left: 36 };
   const innerW = w - pad.left - pad.right;
   const innerH = h - pad.top - pad.bottom;
   const maxOI = Math.max(...data.map(d => Math.max(d.call, d.put)));
   const yScale = v => pad.top + innerH * (1 - v / maxOI);
   const bw = innerW / data.length;
 
+  const outerGap = bw * 0.12;
+  const innerGap = bw * 0.05;
+  const barW     = (bw - 2 * outerGap - innerGap) / 2;
+  const putBarX  = (x) => x + outerGap;
+  const callBarX = (x) => x + outerGap + barW + innerGap;
+
+  // Spot x — interpolate between strikes
+  let spotPos = 0;
+  for (let i = 0; i < data.length - 1; i++) {
+    if (data[i].strike <= spot && data[i + 1].strike >= spot) {
+      spotPos = i + (spot - data[i].strike) / (data[i + 1].strike - data[i].strike);
+      break;
+    }
+  }
+  const spotX = pad.left + spotPos * bw + bw / 2;
+
+  // Max pain x
+  const mpIdx = data.findIndex(d => d.strike === maxPain);
+  const mpX   = mpIdx >= 0 ? pad.left + mpIdx * bw + bw / 2 : -1;
+
+  // Info box: fixed top-right corner, entirely within pad.top zone
+  const boxW = 210; const boxH = 38;
+  const boxX = w - pad.right - boxW;
+  const boxY = 3;
+
   return (
     <div className="chart-wrap">
       <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{height: h}}>
-        <defs>
-          <filter id="oi-line-glow"><feGaussianBlur stdDeviation="1.8"/></filter>
-        </defs>
         <g className="chart-grid">
           {[0, 0.25, 0.5, 0.75, 1].map((p, i) => (
             <line key={i} x1={pad.left} x2={w - pad.right} y1={pad.top + p * innerH} y2={pad.top + p * innerH} opacity={0.5}/>
           ))}
         </g>
-        {/* bars — sharp, no glow */}
+
+        {/* bars */}
         {data.map((d, i) => {
           const x = pad.left + i * bw;
-          const cx = x + bw/2;
           const callH = (innerH * d.call) / maxOI;
-          const putH = (innerH * d.put) / maxOI;
+          const putH  = (innerH * d.put)  / maxOI;
           return (
             <g key={i}>
-              {d.put > 0 && (
-                <rect x={x + 2} y={yScale(d.put)} width={bw/2 - 3} height={putH} fill="var(--amber)" shapeRendering="crispEdges" />
-              )}
-              {d.call > 0 && (
-                <rect x={cx + 1} y={yScale(d.call)} width={bw/2 - 3} height={callH} fill="var(--blue)" shapeRendering="crispEdges" />
-              )}
+              {d.put > 0 && <rect x={putBarX(x)}  y={yScale(d.put)}  width={barW} height={putH}  fill="var(--amber)" shapeRendering="crispEdges" />}
+              {d.call > 0 && <rect x={callBarX(x)} y={yScale(d.call)} width={barW} height={callH} fill="var(--blue)"  shapeRendering="crispEdges" />}
             </g>
           );
         })}
-        {/* max pain line + label */}
-        {(() => {
-          const idx = data.findIndex(d => d.strike === maxPain);
-          if (idx < 0) return null;
-          const x = pad.left + idx * bw + bw/2;
-          return (
-            <g>
-              <line x1={x} x2={x} y1={pad.top - 4} y2={h - pad.bottom} stroke="var(--red)" strokeDasharray="3 3" opacity="0.75" filter="url(#oi-line-glow)"/>
-              <line x1={x} x2={x} y1={pad.top - 4} y2={h - pad.bottom} stroke="var(--red)" strokeDasharray="3 3" opacity="0.95"/>
-              <rect x={x + 6} y={pad.top - 16} width={156} height={18} rx={4} fill="#0a0c12" stroke="var(--red)" strokeOpacity="0.5"/>
-              <text x={x + 14} y={pad.top - 3} fill="var(--red)" fontSize="11" fontWeight="700" fontFamily="JetBrains Mono, monospace" letterSpacing="0.08em" filter="url(#oi-line-glow)" opacity="0.6">MAX PAIN ${maxPain.toLocaleString("en-US")}</text>
-              <text x={x + 14} y={pad.top - 3} fill="var(--red)" fontSize="11" fontWeight="700" fontFamily="JetBrains Mono, monospace" letterSpacing="0.08em">MAX PAIN ${maxPain.toLocaleString("en-US")}</text>
-            </g>
-          );
-        })()}
-        {/* spot line */}
-        {(() => {
-          let pos = 0;
-          for (let i = 0; i < data.length - 1; i++) {
-            if (data[i].strike <= spot && data[i+1].strike >= spot) {
-              const t = (spot - data[i].strike) / (data[i+1].strike - data[i].strike);
-              pos = i + t;
-              break;
-            }
-          }
-          const x = pad.left + pos * bw + bw/2;
-          return (
-            <g>
-              <line x1={x} x2={x} y1={pad.top - 4} y2={h - pad.bottom} stroke="var(--violet)" strokeWidth="2" opacity="0.7" filter="url(#oi-line-glow)"/>
-              <line x1={x} x2={x} y1={pad.top - 4} y2={h - pad.bottom} stroke="var(--violet)" strokeWidth="1.5" opacity="1"/>
-              <rect x={x - 116} y={pad.top - 16} width={106} height={18} rx={4} fill="#0a0c12" stroke="var(--violet)" strokeOpacity="0.5"/>
-              <text x={x - 109} y={pad.top - 3} fill="var(--violet)" fontSize="11" fontWeight="700" fontFamily="JetBrains Mono, monospace" letterSpacing="0.08em">SPOT ${spot.toLocaleString("en-US")}</text>
-            </g>
-          );
-        })()}
+
+        {/* max pain line — dashed red, triple-render for visible glow */}
+        {mpX >= 0 && (
+          <g>
+            <line x1={mpX} x2={mpX} y1={pad.top} y2={h - pad.bottom} stroke="var(--red)" strokeDasharray="6 5" strokeWidth="9"  opacity="0.10"/>
+            <line x1={mpX} x2={mpX} y1={pad.top} y2={h - pad.bottom} stroke="var(--red)" strokeDasharray="6 5" strokeWidth="4"  opacity="0.22"/>
+            <line x1={mpX} x2={mpX} y1={pad.top} y2={h - pad.bottom} stroke="var(--red)" strokeDasharray="6 5" strokeWidth="1.5" opacity="0.95"/>
+          </g>
+        )}
+
+        {/* spot line — solid violet, triple-render for visible glow */}
+        <g>
+          <line x1={spotX} x2={spotX} y1={pad.top} y2={h - pad.bottom} stroke="var(--violet)" strokeWidth="12" opacity="0.10"/>
+          <line x1={spotX} x2={spotX} y1={pad.top} y2={h - pad.bottom} stroke="var(--violet)" strokeWidth="5"  opacity="0.25"/>
+          <line x1={spotX} x2={spotX} y1={pad.top} y2={h - pad.bottom} stroke="var(--violet)" strokeWidth="2"  opacity="1"/>
+        </g>
+
+        {/* top-right info box — above bars, never overlaps */}
+        <g>
+          <rect x={boxX} y={boxY} width={boxW} height={boxH} rx={5} fill="#080b10" stroke="#1C2530" strokeWidth="0.8"/>
+          {/* Spot row */}
+          <circle cx={boxX + 14} cy={boxY + 11} r="4.5" fill="var(--violet)"/>
+          <text x={boxX + 26} y={boxY + 16} fill="var(--violet)" fontSize="13" fontWeight="700" fontFamily="JetBrains Mono, monospace" letterSpacing="0.04em">
+            SPOT  ${spot.toLocaleString("en-US")}
+          </text>
+          <line x1={boxX + 4} x2={boxX + boxW - 4} y1={boxY + boxH / 2} y2={boxY + boxH / 2} stroke="#1C2530" strokeWidth="0.8"/>
+          {/* Max pain row */}
+          <circle cx={boxX + 14} cy={boxY + 28} r="4.5" fill="var(--red)"/>
+          <text x={boxX + 26} y={boxY + 33} fill="var(--red)" fontSize="13" fontWeight="700" fontFamily="JetBrains Mono, monospace" letterSpacing="0.04em">
+            MAX PAIN  ${maxPain.toLocaleString("en-US")}
+          </text>
+        </g>
+
         {/* x-axis labels */}
-        <g className="chart-axis">
+        <g>
           {data.map((d, i) => i % 3 === 0 ? (
-            <text key={i} x={pad.left + i * bw + bw/2} y={h - 10} textAnchor="middle">{(d.strike/1000) + "k"}</text>
+            <text key={i} x={pad.left + i * bw + bw / 2} y={h - 10}
+              textAnchor="middle" fill="var(--fg-2)" fontSize="13"
+              fontFamily="JetBrains Mono, monospace">
+              {(d.strike / 1000) + "k"}
+            </text>
           ) : null)}
         </g>
       </svg>

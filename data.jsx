@@ -100,13 +100,15 @@ const DATA = (() => {
   // -- Options chain history (mock — live Deribit feed overrides current values)
   // GEX arc: starts mild positive → peaks ~+0.05 mid-period → fades to ~-0.04 at end,
   // so the manual curOpt override of -0.05 is a natural continuation of the trend.
-  const baseDate = new Date(2026, 4, 13); // anchor for opt history dates
+  // Dates: generate 30 trading days ending today so the calendar is always current.
+  const _optToday = new Date();
+  _optToday.setHours(0, 0, 0, 0);
+  const _optDates = [];
+  { const c = new Date(_optToday); while (_optDates.length < 30) { if (c.getDay() !== 0 && c.getDay() !== 6) _optDates.unshift(new Date(c)); c.setDate(c.getDate() - 1); } }
   const optHistory = [];
   let baseGex = 0.025;
   for (let i = 0; i < 30; i++) {
-    const d = new Date(baseDate);
-    d.setDate(baseDate.getDate() - (29 - i));
-    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+    const d = _optDates[i];
     const noise = (Math.sin(i * 0.6) + Math.cos(i * 0.9)) * 0.01;
     const phase = i / 29;
     baseGex = Math.max(-0.06, Math.min(0.08, 0.055 * Math.sin(phase * Math.PI) - 0.05 * phase + 0.005 + noise));
@@ -232,20 +234,20 @@ const DATA = (() => {
   // -- Levels — derived from weekly OI above; update oiByStrike to change levels
   const levels = {
     spot: session.spot,
-    r3: { price: wk.r3 || 90000, label: "R3", strength: 1,
+    r3: { price: wk.r3 || Math.round(session.spot * 1.12), label: "R3", strength: 1,
           note: "Structural Cap · Long-Dated Call Concentration" },
-    r2: { price: wk.r2 || 86000, label: "R2", strength: 2,
+    r2: { price: wk.r2 || Math.round(session.spot * 1.07), label: "R2", strength: 2,
           note: `${wk.r2OI} Contracts · Secondary Call Wall` },
-    r1: { price: wk.callWall || 83000, label: "R1", strength: 4,
-          note: `${wk.callWallOI} Contracts At 15MAY26 · Dominant Call Wall` },
+    r1: { price: wk.callWall || Math.round(session.spot * 1.03), label: "R1", strength: 4,
+          note: `${wk.callWallOI} Contracts · Dominant Call Wall` },
     gf: { price: 80000, label: "GF", strength: 4,
           note: "Dealer Gamma Flips Long → Short · GEX Peak", pin: true,
           tooltip: "The strike where dealer gamma turns from positive (long) to negative (short). Above the flip, hedging dampens moves and price tends to pin. Below the flip, hedging amplifies moves and breakouts follow through. The 'GEX peak' means net gamma is largest in absolute value at this level." },
-    s1: { price: wk.putWall || 76500, label: "S1", strength: 4,
-          note: `${wk.putWallOI} Contracts · Put Wall · Max Pain $${(wk.maxPain||78000).toLocaleString("en-US")}`, pin: true },
-    s2: { price: wk.s2 || 75000, label: "S2", strength: 3,
+    s1: { price: wk.putWall || Math.round(session.spot * 0.97), label: "S1", strength: 4,
+          note: `${wk.putWallOI} Contracts · Put Wall · Max Pain $${(wk.maxPain || Math.round(session.spot * 0.97)).toLocaleString("en-US")}`, pin: true },
+    s2: { price: wk.s2 || Math.round(session.spot * 0.93), label: "S2", strength: 3,
           note: `${wk.s2OI} Contracts · Secondary Put Wall` },
-    s3: { price: wk.s3 || 73000, label: "S3", strength: 2,
+    s3: { price: wk.s3 || Math.round(session.spot * 0.88), label: "S3", strength: 2,
           note: "Cycle-Floor Puts · Long-Dated Support" }
   };
 

@@ -171,11 +171,36 @@ Any notable shifts or divergences in the data recently that traders should be wa
 }
 
 /* ============================================================
+   Z-SCORE HELPERS
+   ============================================================ */
+
+function flowZScore(today, historicalValues) {
+  const n = historicalValues.length;
+  if (n === 0) return 0;
+  const mean = historicalValues.reduce((a, b) => a + b, 0) / n;
+  const variance = historicalValues.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / n;
+  const stdDev = Math.sqrt(variance);
+  if (stdDev === 0) return 0;
+  return (today - mean) / stdDev;
+}
+
+function zLabel(z) {
+  if (z >  2.5) return "Extreme Inflow";
+  if (z >  1.5) return "Demand Accelerating";
+  if (z >  0.5) return "Above Average";
+  if (z > -0.5) return "Neutral";
+  if (z > -1.5) return "Below Average";
+  if (z > -2.5) return "Demand Suppressed";
+  return "Extreme Outflow";
+}
+
+/* ============================================================
    OVERVIEW TAB
    ============================================================ */
 
 function OverviewTab() {
   const { Panel, StatCard, LevelsTable, Streak, SignalBadge, HoverDef } = window.UI;
+  const { FeDemandDigest } = window.FlowsEngine;
   const lastEtf = DATA.lastEtf;
   const curOpt = DATA.optHistory[DATA.optHistory.length - 1];
   const levels = DATA.levels;
@@ -189,6 +214,13 @@ function OverviewTab() {
   const isPositiveEtf  = lastEtf.ibit > 0;
   const etfAboveAvg    = lastEtf.ibit > DATA.avg30;
   const posStreak      = DATA.streak5.filter(v => v === "up").length;
+
+  // Z-scores: compare lastEtf against the N days that preceded it
+  const allFlows = DATA.etfHistory.map(s => s.ibit);
+  const lastIdx  = DATA.etfHistory.length - 1;
+  const z7  = flowZScore(lastEtf.ibit, allFlows.slice(Math.max(0, lastIdx - 7),  lastIdx));
+  const z14 = flowZScore(lastEtf.ibit, allFlows.slice(Math.max(0, lastIdx - 14), lastIdx));
+  const z30 = flowZScore(lastEtf.ibit, allFlows.slice(Math.max(0, lastIdx - 30), lastIdx));
 
   const s1Price = DATA.fmt$(levels.s1.price);
   const s2Price = DATA.fmt$(levels.s2.price);
@@ -276,12 +308,21 @@ function OverviewTab() {
           })()}
           current={`${DATA.fmtM(lastEtf.ibit)} — ${lastEtf.ibit > 200 ? "Strong Demand Print" : lastEtf.ibit > 0 ? "Healthy Demand Print" : "Outflow Print"}`}
           tone="neu" />
-        <StatCard term="vs 30D Avg" label="vs 30D Avg"
-          value={lastEtf.ibit >= DATA.avg30
-            ? <span className="badge b-mint" style={{fontSize: 12, padding: "4px 10px"}}><span className="dot"></span>ABOVE AVG</span>
-            : <span className="badge b-red"  style={{fontSize: 12, padding: "4px 10px"}}><span className="dot"></span>BELOW AVG</span>}
-          sub={`14d Avg ${DATA.fmtM(DATA.avg14)} · 30d ${DATA.fmtM(DATA.avg30)}`}
-          current={etfAboveAvg ? "Short-Term Demand Accelerating" : "Short-Term Demand Cooling"}
+        <StatCard term="vs 30D Avg" label="vs Avg"
+          value={
+            <div style={{display:"flex", flexDirection:"column", gap:6}}>
+              {[["vs 7D", z7], ["vs 14D", z14], ["vs 30D", z30]].map(([lbl, z]) => (
+                <div key={lbl} style={{display:"flex", alignItems:"center", gap:8}}>
+                  <span className="mono muted" style={{fontSize:10, minWidth:36}}>{lbl}</span>
+                  <span className="mono" style={{fontSize:12, fontWeight:600, color: z > 0 ? "var(--mint)" : "var(--red)"}}>
+                    {z > 0 ? "▲" : "▼"} {(z >= 0 ? "+" : "") + z.toFixed(1)}σ
+                  </span>
+                </div>
+              ))}
+            </div>
+          }
+          sub={zLabel(z30)}
+          current={zLabel(z30)}
           tone="neu" />
         <StatCard term="Buy Dominance" label="Buy Dominance"
           value={DATA.buyDominance + "%"}
@@ -291,6 +332,9 @@ function OverviewTab() {
           current={`${DATA.buyDominance}% ${DATA.buyDominance >= 70 ? "> 70% Threshold — Strong" : DATA.buyDominance >= 50 ? "> 50% Threshold — Moderate" : "< 50% — Weak"}`}
           tone="neu" />
       </div>
+
+      {/* DEMAND SIGNAL */}
+      <FeDemandDigest />
 
       {/* MARKET READ — dynamic summary */}
       <Panel title="Market Read" dot="violet" className="read-summary">
@@ -396,10 +440,8 @@ function OverviewTab() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 260px", gap: "var(--gap-grid)", alignItems: "start" }}>
         <Panel>
           <LevelsTable
-            candidates={[
-              DATA.levels.r1, DATA.levels.r2, DATA.levels.r3,
-              DATA.levels.s1, DATA.levels.s2, DATA.levels.s3,
-            ].filter(Boolean)}
+            resistance={[DATA.levels.r1, DATA.levels.r2, DATA.levels.r3]}
+            support={[DATA.levels.s1, DATA.levels.s2, DATA.levels.s3]}
             spot={DATA.levels.spot}
             regime={isPositiveGex ? "positive-gamma" : "negative-gamma"}
           />

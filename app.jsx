@@ -107,6 +107,7 @@ function App() {
       lastEtf:      etfStore.lastEtf,
       avg30:        etfStore.avg30,
       avg14:        etfStore.avg14,
+      avg7:         etfStore.avg7,
       buyDominance: etfStore.buyDominance,
       buySellRatio: etfStore.buySellRatio,
       streak5:      etfStore.streak5,

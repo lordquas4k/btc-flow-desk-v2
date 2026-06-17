@@ -588,12 +588,15 @@ main.content {
   display: grid;
   grid-template-columns: 60px 110px 130px 1fr;
   row-gap: 2px;
-  align-items: center;
+  /* no align-items here — default stretch so all cells in a row share the same height,
+     keeping border-top lines at the same y-position across all four columns */
 }
 .levels .row {
   display: contents;
 }
 .levels .cell {
+  display: flex;
+  align-items: center;  /* center content vertically within the stretched cell */
   padding: 11px 0;
   font-family: var(--font-mono);
   font-size: 14px;
