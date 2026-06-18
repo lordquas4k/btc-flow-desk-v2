@@ -182,9 +182,16 @@ async function fetchFarsideFlows() {
     if (cells.length <= Math.max(ibitIdx, totalIdx)) continue;
     const isoDate = parseDate(cells[0].textContent);
     if (!isoDate) continue;
-    if (isoDate >= new Date().toISOString().slice(0, 10)) continue; // skip today — data not yet confirmed
-    const ibit  = parseFlow(cells[ibitIdx].textContent);
-    const total = parseFlow(cells[totalIdx].textContent);
+    // Farside shows "-" for cells not yet finalized — this can persist for more than
+    // one day after the session date, so check the actual cell content rather than
+    // just skipping "today" (a date-only check would let unpublished "-" rows get
+    // parsed as real zeros and permanently stuck once saved).
+    const ibitRaw = cells[ibitIdx].textContent.trim();
+    const totalRaw = cells[totalIdx].textContent.trim();
+    const unpublished = s => !s || s === '-' || s === '—';
+    if (unpublished(ibitRaw) || unpublished(totalRaw)) continue;
+    const ibit  = parseFlow(ibitRaw);
+    const total = parseFlow(totalRaw);
     entries.push({ date: isoDate, ibit, others: parseFloat((total - ibit).toFixed(1)) });
   }
 

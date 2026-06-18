@@ -205,23 +205,9 @@ input, select, textarea { font: inherit; color: inherit; }
 .brand-mark {
   width: 28px; height: 28px;
   border-radius: 6px;
-  background:
-    radial-gradient(circle at 30% 30%, var(--mint) 0%, var(--mint-soft) 50%, transparent 70%),
-    linear-gradient(135deg, #0e1018, #1a1f30);
+  object-fit: cover;
   border: 1px solid var(--line-strong);
-  position: relative;
-  box-shadow:
-    inset 0 0 8px rgba(62, 224, 137, 0.25),
-    0 0 calc(12px * var(--glow-strength)) rgba(62, 224, 137, 0.35);
-}
-.brand-mark::after {
-  content: "₿";
-  position: absolute; inset: 0;
-  display: grid; place-items: center;
-  font-family: var(--font-mono);
-  font-weight: 700; font-size: 14px;
-  color: #06070b;
-  text-shadow: 0 0 4px rgba(62, 224, 137, 0.6);
+  box-shadow: 0 0 calc(12px * var(--glow-strength)) rgba(62, 224, 137, 0.35);
 }
 .brand-text {
   display: flex; flex-direction: column; line-height: 1.2;

@@ -160,7 +160,7 @@ function TopBar({ tab, setTab, session, live, liveStatus, spotStatus, optStatus,
   return (
     <div className="topbar">
       <div className="brand">
-        <div className="brand-mark"></div>
+        <img className="brand-mark" src="river_icon_rounded.ico" alt="" />
         <div className="brand-text">
           <div className="brand-name">BTC FLOW DESK</div>
           <div className="brand-sub">v2 · TERMINAL</div>

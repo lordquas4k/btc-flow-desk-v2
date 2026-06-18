@@ -72,15 +72,27 @@ function ETFFlowsTab() {
     setSyncMsg("");
     try {
       const remote = await window.ETFStore.fetchFarsideFlows();
-      const existing = new Set(store.history.map(s => localDateStr(s.date)));
-      const fresh = remote.filter(e => !existing.has(e.date));
-      if (!fresh.length) {
+      const existingByDate = new Map(store.history.map(s => [localDateStr(s.date), s]));
+      const fresh = [];
+      const corrected = [];
+      for (const e of remote) {
+        const ex = existingByDate.get(e.date);
+        if (!ex) fresh.push(e);
+        // A 0/0 entry is most likely a stale "-" placeholder saved before Farside
+        // finalized that date — re-import it once real (non-zero) data shows up.
+        else if (ex.ibit === 0 && ex.others === 0 && (e.ibit !== 0 || e.others !== 0)) corrected.push(e);
+      }
+      const toApply = [...fresh, ...corrected];
+      if (!toApply.length) {
         setSyncStatus("done");
         setSyncMsg("Already up to date");
       } else {
-        fresh.forEach(e => window.ETFStore.addEntry(e));
+        toApply.forEach(e => window.ETFStore.addEntry(e));
         setSyncStatus("done");
-        setSyncMsg(`+${fresh.length} session${fresh.length > 1 ? "s" : ""} imported`);
+        const parts = [];
+        if (fresh.length) parts.push(`+${fresh.length} new`);
+        if (corrected.length) parts.push(`${corrected.length} corrected`);
+        setSyncMsg(`${parts.join(", ")} imported`);
       }
     } catch(e) {
       setSyncStatus("error");
